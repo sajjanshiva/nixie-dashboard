@@ -10,20 +10,53 @@ const router = Router();
 // signature BEFORE trusting anything in the payload.
 function verifyShopifyHmac(req) {
   const hmacHeader = req.get("X-Shopify-Hmac-Sha256");
-  if (!hmacHeader) return false;
-  const digest = crypto
-    .createHmac("sha256", process.env.SHOPIFY_WEBHOOK_SECRET)
-    .update(req.body) // raw Buffer
-    .digest("base64");
-  return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmacHeader));
+  const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
+  if (!hmacHeader || !secret) return false;
+  const digest = crypto.createHmac("sha256", secret).update(req.body).digest("base64");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmacHeader));
+  } catch {
+    // timingSafeEqual throws if the two buffers differ in length — that's
+    // just an invalid signature, not a crash-worthy error.
+    return false;
+  }
 }
 
-// POST /webhooks/shopify/orders-create
-// A real, paid order → becomes a Teamflow task (source: shopify_order).
-router.post("/orders-create", async (req, res) => {
+// Line-item custom properties come back from Shopify as an array of
+// { name, value } pairs (this is what "customAttributes" on the GraphQL
+// draftOrderCreate mutation becomes in the REST webhook payload). This
+// turns that array into a plain lookup object, and separately collects
+// every "Secondary Fabric N" entry into a list since there can be any
+// number of them (including zero).
+function parseLineItemProperties(properties = []) {
+  const map = {};
+  const secondaryFabrics = [];
+  for (const prop of properties) {
+    if (/^secondary fabric/i.test(prop.name)) {
+      if (prop.value) secondaryFabrics.push(prop.value);
+    } else {
+      map[prop.name] = prop.value;
+    }
+  }
+  return { map, secondaryFabrics };
+}
+
+// POST /webhooks/shopify/orders-paid
+// Fires only once an order's payment actually goes through (financial_status
+// becomes "paid") — this is deliberately "Order payment" (orders/paid), not
+// "Order creation" (orders/create), since an order can be created before
+// it's actually paid (COD, manual payment, etc.) and only paid orders
+// should count as real sales here.
+router.post("/orders-paid", async (req, res) => {
   if (!verifyShopifyHmac(req)) return res.status(401).send("Invalid signature");
 
   const order = JSON.parse(req.body.toString("utf8"));
+
+  // Defensive check even though this topic should only fire on payment.
+  if (order.financial_status !== "paid") {
+    return res.status(200).send("ignored (not paid)");
+  }
+
   const items = (order.line_items || []).map((li) => `${li.quantity}x ${li.title}`).join(", ");
 
   const { data: task, error } = await supabaseAdmin
@@ -50,35 +83,40 @@ router.post("/orders-create", async (req, res) => {
   await supabaseAdmin.from("messages").insert({
     task_id: task.id,
     kind: "system",
-    text: "Order imported from Shopify",
+    text: "Order imported from Shopify (payment confirmed)",
   });
 
   res.status(200).send("ok");
 });
 
 // POST /webhooks/shopify/draft-orders-create
-// Draft orders from the AI price analyzer + "Contact Me" form on the
-// Nixie site → become Shopify Inbox leads, not tasks (informational until
-// they convert into a real order).
-//
-// NOTE: adjust the field paths below (note_attributes, line_items, etc.)
-// to match exactly how the price analyzer / contact form actually writes
-// data into the draft order — this is a best-effort mapping since the
-// analyzer's payload shape wasn't fully specified.
+// Draft orders from the AI outfit analyzer + "Contact Me" form on the
+// Nixie site → become Shopify Inbox leads. The analyzer backend stores
+// everything (outfit details AND the customer's contact info) as custom
+// line-item properties on a single line item — there is no real Shopify
+// customer or shipping address on these draft orders — so every field
+// below is read out of that one line item's `properties` array.
 router.post("/draft-orders-create", async (req, res) => {
   if (!verifyShopifyHmac(req)) return res.status(401).send("Invalid signature");
 
   const draft = JSON.parse(req.body.toString("utf8"));
-  const attr = (name) => draft.note_attributes?.find((a) => a.name === name)?.value;
+  const lineItem = draft.line_items?.[0] || {};
+  const { map, secondaryFabrics } = parseLineItemProperties(lineItem.properties);
 
   const { error } = await supabaseAdmin.from("shopify_leads").insert({
     lead_number: draft.name,
-    name: [draft.customer?.first_name, draft.customer?.last_name].filter(Boolean).join(" ") || attr("name"),
-    phone: draft.customer?.phone || attr("phone"),
-    outfit_type: attr("outfit_type") || draft.line_items?.[0]?.title,
-    price_estimate: attr("price_estimate") || draft.total_price,
-    image_url: attr("image_url"),
-    message: attr("message") || draft.note,
+    name: map["Name"] || null,
+    phone: map["Phone"] || null,
+    email: map["Email"] || null,
+    address: map["Address"] || null,
+    city: map["City"] || null,
+    state: map["State"] || null,
+    pincode: map["Pincode"] || null,
+    outfit_type: map["Outfit Type"] || lineItem.title || null,
+    primary_fabric: map["Primary Fabric"] || null,
+    secondary_fabrics: secondaryFabrics,
+    price_estimate: lineItem.price || draft.total_price || null,
+    image_url: map["Main Outfit Image"] || null,
     status: "unassigned",
   });
 

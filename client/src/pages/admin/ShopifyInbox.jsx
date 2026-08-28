@@ -7,7 +7,10 @@ export default function ShopifyInbox() {
   const [orders, setOrders] = useState([]);
   const [leads, setLeads] = useState([]);
   const [staff, setStaff] = useState([]);
-  const [viewing, setViewing] = useState(null);
+  // Track WHICH record is open by id+type instead of a frozen copy of the
+  // object — otherwise the modal keeps showing stale data (e.g. old
+  // "unassigned" status) after you assign it from the card underneath.
+  const [viewingRef, setViewingRef] = useState(null); // { type: "order" | "lead", id }
 
   useEffect(() => {
     getShopifyOrders().then(setOrders);
@@ -23,6 +26,14 @@ export default function ShopifyInbox() {
     await assignLead(leadId, assigneeId || null);
     setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, assignee_id: assigneeId, status: assigneeId ? "assigned" : "unassigned" } : l)));
   }
+
+  // Always read the live record out of the current orders/leads state, so
+  // the open modal reflects whatever was just assigned.
+  const viewing = !viewingRef
+    ? null
+    : viewingRef.type === "order"
+    ? orders.find((o) => o.id === viewingRef.id)
+    : leads.find((l) => l.id === viewingRef.id);
 
   return (
     <div className="px-4 py-4 md:px-6 md:py-6">
@@ -58,7 +69,7 @@ export default function ShopifyInbox() {
               <p className="truncate text-[13.5px] font-semibold text-slate-800">{o.client_name}</p>
               <p className="mb-2.5 truncate text-[12px] text-slate-400">{o.shopify_items} · {o.shopify_price}</p>
               <div className="flex gap-2">
-                <button onClick={() => setViewing(o)} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50">
+                <button onClick={() => setViewingRef({ type: "order", id: o.id })} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50">
                   View Details
                 </button>
                 <select
@@ -89,7 +100,7 @@ export default function ShopifyInbox() {
               <p className="truncate text-[13.5px] font-semibold text-slate-800">{l.name}</p>
               <p className="mb-2.5 truncate text-[12px] text-slate-400">{l.outfit_type} · {l.price_estimate}</p>
               <div className="flex gap-2">
-                <button onClick={() => setViewing(l)} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50">
+                <button onClick={() => setViewingRef({ type: "lead", id: l.id })} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50">
                   View Details
                 </button>
                 <select
@@ -109,7 +120,7 @@ export default function ShopifyInbox() {
         </div>
       )}
 
-      <Modal open={!!viewing} onClose={() => setViewing(null)}>
+      <Modal open={!!viewing} onClose={() => setViewingRef(null)}>
         {viewing && (
           <div className="p-5">
             <h3 className="mb-4 text-[15px] font-bold text-slate-900">Order / Lead Details</h3>
@@ -119,7 +130,9 @@ export default function ShopifyInbox() {
                 .map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-3 border-b border-slate-50 py-1.5">
                     <dt className="capitalize text-slate-400">{k.replaceAll("_", " ")}</dt>
-                    <dd className="text-right text-slate-700">{String(v ?? "—")}</dd>
+                    <dd className="text-right text-slate-700">
+                      {Array.isArray(v) ? (v.length ? v.join(", ") : "—") : String(v ?? "—")}
+                    </dd>
                   </div>
                 ))}
             </dl>
