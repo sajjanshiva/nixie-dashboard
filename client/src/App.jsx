@@ -1,6 +1,6 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { LayoutGrid, ShoppingBag, ClipboardCheck, Users, BarChart3, Home as HomeIcon, ListChecks, Plane, Receipt } from "lucide-react";
+import { LayoutGrid, ShoppingBag, ClipboardCheck, Users, BarChart3, Home as HomeIcon, ListChecks, Plane, Receipt, Target } from "lucide-react";
 
 import { useAuth } from "./lib/AuthContext.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
@@ -15,6 +15,7 @@ import AdminPerformance from "./pages/admin/Performance.jsx";
 
 import StaffHome from "./pages/staff/Home.jsx";
 import MyTasks from "./pages/staff/MyTasks.jsx";
+import MyLeads from "./pages/staff/MyLeads.jsx";
 import Leave from "./pages/staff/Leave.jsx";
 import Reimbursements from "./pages/staff/Reimbursements.jsx";
 import MyPerformance from "./pages/staff/MyPerformance.jsx";
@@ -30,6 +31,7 @@ const ADMIN_NAV = [
 const STAFF_NAV = [
   { to: "/staff/home", label: "Home", icon: HomeIcon },
   { to: "/staff/my-tasks", label: "My Tasks", icon: ListChecks },
+  { to: "/staff/my-leads", label: "My Leads", icon: Target },
   { to: "/staff/leave", label: "Leave", icon: Plane },
   { to: "/staff/reimbursements", label: "Reimbursements", icon: Receipt },
   { to: "/staff/performance", label: "Performance", icon: BarChart3 },
@@ -61,6 +63,7 @@ export default function App() {
 
       <Route path="/staff/home" element={<ProtectedRoute role="staff"><StaffShell title="Home"><StaffHome /></StaffShell></ProtectedRoute>} />
       <Route path="/staff/my-tasks" element={<ProtectedRoute role="staff"><StaffShell title="My Tasks"><MyTasks /></StaffShell></ProtectedRoute>} />
+      <Route path="/staff/my-leads" element={<ProtectedRoute role="staff"><StaffShell title="My Leads"><MyLeads /></StaffShell></ProtectedRoute>} />
       <Route path="/staff/leave" element={<ProtectedRoute role="staff"><StaffShell title="Leave"><Leave /></StaffShell></ProtectedRoute>} />
       <Route path="/staff/reimbursements" element={<ProtectedRoute role="staff"><StaffShell title="Reimbursements"><Reimbursements /></StaffShell></ProtectedRoute>} />
       <Route path="/staff/performance" element={<ProtectedRoute role="staff"><StaffShell title="My Performance"><MyPerformance /></StaffShell></ProtectedRoute>} />

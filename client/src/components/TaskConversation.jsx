@@ -139,6 +139,35 @@ export default function TaskConversation({ task, staffToggleLabel, onBack, onPro
         </button>
       </div>
 
+      {/* Task details — Shopify order info for shopify_order tasks,
+          description/links/phone for manually created ones */}
+      {(task.source === "shopify_order" || task.description || task.links || task.client_phone) && (
+        <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[12px] text-slate-600 md:px-5">
+          {task.source === "shopify_order" ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span><span className="text-slate-400">Order:</span> {task.shopify_order_number}</span>
+              <span><span className="text-slate-400">Items:</span> {task.shopify_items}</span>
+              <span><span className="text-slate-400">Price:</span> {task.shopify_price}</span>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {task.client_phone && <p><span className="text-slate-400">Phone:</span> {task.client_phone}</p>}
+              {task.description && <p><span className="text-slate-400">Description:</span> {task.description}</p>}
+              {task.links && (
+                <p>
+                  <span className="text-slate-400">Links:</span>{" "}
+                  {task.links.split("\n").filter(Boolean).map((link, i) => (
+                    <a key={i} href={link.trim()} target="_blank" rel="noreferrer" className="mr-2 text-accent hover:underline">
+                      {link.trim()}
+                    </a>
+                  ))}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Progress slider */}
       <div className="border-b border-slate-100 px-4 py-3 md:px-5">
         <div className="mb-1 flex items-center justify-between">

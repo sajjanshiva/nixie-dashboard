@@ -88,13 +88,23 @@ export async function getShopifyOrders() {
   return data;
 }
 
-export async function getShopifyLeads() {
-  const { data, error } = await supabase
+export async function getShopifyLeads({ assigneeId } = {}) {
+  let q = supabase
     .from("shopify_leads")
     .select("*, assignee:profiles(id, name)")
     .order("created_at", { ascending: false });
+  if (assigneeId) q = q.eq("assignee_id", assigneeId);
+  const { data, error } = await q;
   if (error) throw error;
   return data;
+}
+
+export async function markLeadContacted(leadId) {
+  const { error } = await supabase
+    .from("shopify_leads")
+    .update({ status: "contacted", contacted_at: new Date().toISOString() })
+    .eq("id", leadId);
+  if (error) throw error;
 }
 
 export async function assignLead(leadId, assigneeId) {
