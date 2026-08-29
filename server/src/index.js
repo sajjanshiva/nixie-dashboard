@@ -9,14 +9,17 @@ import attendanceRoute from "./routes/attendance.js";
 import teamRoute from "./routes/team.js";
 import imagekitAuthRoute from "./routes/imagekitAuth.js";
 import shopifyWebhooks from "./routes/webhooksShopify.js";
+import whatsappWebhooks from "./routes/webhooksWhatsapp.js";
 
 const app = express();
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
 
-// Shopify webhooks need the RAW request body (for HMAC verification), so
-// this is mounted BEFORE express.json() and only applies to this one path.
+// Shopify + WhatsApp webhooks need the RAW request body (for signature
+// verification), so both are mounted BEFORE express.json() and only
+// apply to their own paths.
 app.use("/webhooks/shopify", express.raw({ type: "application/json" }), shopifyWebhooks);
+app.use("/webhooks/whatsapp", express.raw({ type: "application/json" }), whatsappWebhooks);
 
 // Everything else uses normal JSON parsing.
 app.use(express.json());

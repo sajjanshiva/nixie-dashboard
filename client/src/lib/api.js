@@ -80,12 +80,16 @@ export async function markTaskComplete(taskId) {
 
 export async function getShopifyOrders() {
   const { data, error } = await supabase
-    .from("tasks")
-    .select("*, assignee:profiles(id, name)")
-    .eq("source", "shopify_order")
+    .from("shopify_orders")
+    .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
+}
+
+export async function updateOrderStatus(orderId, status) {
+  const { error } = await supabase.from("shopify_orders").update({ status }).eq("id", orderId);
+  if (error) throw error;
 }
 
 export async function getShopifyLeads({ assigneeId } = {}) {

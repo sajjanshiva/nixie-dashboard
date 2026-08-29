@@ -43,48 +43,34 @@ function parseLineItemProperties(properties = []) {
 
 // POST /webhooks/shopify/orders-paid
 // Fires only once an order's payment actually goes through (financial_status
-// becomes "paid") — this is deliberately "Order payment" (orders/paid), not
-// "Order creation" (orders/create), since an order can be created before
-// it's actually paid (COD, manual payment, etc.) and only paid orders
-// should count as real sales here.
+// becomes "paid"). Real orders are a view-only feed in their own table —
+// they no longer auto-create a task; admin re-enters a real task manually
+// via "+ New Task" if one is needed for a given order.
 router.post("/orders-paid", async (req, res) => {
   if (!verifyShopifyHmac(req)) return res.status(401).send("Invalid signature");
 
   const order = JSON.parse(req.body.toString("utf8"));
 
-  // Defensive check even though this topic should only fire on payment.
   if (order.financial_status !== "paid") {
     return res.status(200).send("ignored (not paid)");
   }
 
   const items = (order.line_items || []).map((li) => `${li.quantity}x ${li.title}`).join(", ");
 
-  const { data: task, error } = await supabaseAdmin
-    .from("tasks")
-    .insert({
-      title: `Shopify Order ${order.name} — ${order.customer?.first_name || "Customer"}`,
-      client_name: [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(" ") || order.email,
-      client_phone: order.customer?.phone || order.shipping_address?.phone || null,
-      status: "In Progress",
-      source: "shopify_order",
-      shopify_order_id: String(order.id),
-      shopify_order_number: order.name,
-      shopify_items: items,
-      shopify_price: `${order.currency} ${order.total_price}`,
-    })
-    .select()
-    .single();
+  const { error } = await supabaseAdmin.from("shopify_orders").insert({
+    order_number: order.name,
+    customer_name: [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(" ") || order.email,
+    customer_phone: order.customer?.phone || order.shipping_address?.phone || null,
+    items,
+    price: `${order.currency} ${order.total_price}`,
+    shopify_order_id: String(order.id),
+    status: "unassigned",
+  });
 
   if (error) {
     console.error("Failed to save Shopify order:", error.message);
     return res.status(500).send("DB error");
   }
-
-  await supabaseAdmin.from("messages").insert({
-    task_id: task.id,
-    kind: "system",
-    text: "Order imported from Shopify (payment confirmed)",
-  });
 
   res.status(200).send("ok");
 });

@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { MessageCircle, Users, Send, Check, Sparkles, ChevronLeft } from "lucide-react";
+import { MessageCircle, Users, Send, Check, Sparkles, ChevronLeft, AlertCircle, Clock } from "lucide-react";
 import Avatar from "./Avatar.jsx";
 import { getMessages, subscribeToMessages, sendMessage, updateTaskProgress, markTaskComplete } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.jsx";
 
 function Bubble({ msg }) {
+  const isPending = msg._status === "pending";
+  const isFailed = msg._status === "failed";
+
   if (msg.kind === "system") {
     return (
       <div className="my-3 flex justify-center">
@@ -19,9 +22,9 @@ function Bubble({ msg }) {
   }
   if (msg.kind === "staff") {
     return (
-      <div className="my-2 flex items-start gap-2.5">
+      <div className={`my-2 flex items-start gap-2.5 ${isPending ? "opacity-60" : ""}`}>
         <Avatar name={msg.author_name} tone="staff" />
-        <div className="max-w-[80%] rounded-xl rounded-tl-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+        <div className={`max-w-[80%] rounded-xl rounded-tl-sm border px-3.5 py-2.5 ${isFailed ? "border-rose-300 bg-rose-50" : "border-amber-200 bg-amber-50"}`}>
           <div className="mb-0.5 flex items-center gap-1.5">
             <span className="text-[13px] font-semibold text-amber-900">{msg.author_name}</span>
             <span className="rounded-full bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800">
@@ -30,17 +33,22 @@ function Bubble({ msg }) {
             </span>
           </div>
           <p className="whitespace-pre-wrap text-[14px] leading-snug text-amber-950">{msg.text}</p>
+          <MsgStatus isPending={isPending} isFailed={isFailed} />
         </div>
       </div>
     );
   }
   const fromClient = msg.is_client;
   return (
-    <div className={`my-2 flex items-start gap-2.5 ${fromClient ? "" : "flex-row-reverse text-right"}`}>
+    <div className={`my-2 flex items-start gap-2.5 ${fromClient ? "" : "flex-row-reverse text-right"} ${isPending ? "opacity-60" : ""}`}>
       <Avatar name={msg.author_name || "Client"} tone={fromClient ? "client" : "admin"} />
       <div
         className={`max-w-[80%] rounded-xl px-3.5 py-2.5 ${
-          fromClient ? "rounded-tl-sm border border-emerald-200 bg-white" : "rounded-tr-sm border border-emerald-200 bg-emerald-50"
+          isFailed
+            ? "border border-rose-300 bg-rose-50"
+            : fromClient
+            ? "rounded-tl-sm border border-emerald-200 bg-white"
+            : "rounded-tr-sm border border-emerald-200 bg-emerald-50"
         }`}
       >
         <div className={`mb-0.5 flex items-center gap-1.5 ${fromClient ? "" : "justify-end"}`}>
@@ -51,9 +59,28 @@ function Bubble({ msg }) {
           </span>
         </div>
         <p className="whitespace-pre-wrap text-[14px] leading-snug text-slate-800">{msg.text}</p>
+        <MsgStatus isPending={isPending} isFailed={isFailed} />
       </div>
     </div>
   );
+}
+
+function MsgStatus({ isPending, isFailed }) {
+  if (isFailed) {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-rose-600">
+        <AlertCircle size={11} /> Failed to send — try again
+      </p>
+    );
+  }
+  if (isPending) {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+        <Clock size={11} /> Sending…
+      </p>
+    );
+  }
+  return null;
 }
 
 // `staffToggleLabel` is "Staff" on the admin side, "Admin" on the staff
@@ -69,10 +96,13 @@ export default function TaskConversation({ task, staffToggleLabel, onBack, onPro
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    let unsub = () => {};
     getMessages(task.id).then(setMessages).catch(() => {});
-    unsub = subscribeToMessages(task.id, (m) => setMessages((prev) => [...prev, m]));
-    return () => unsub();
+    const unsub = subscribeToMessages(task.id, (m) => {
+      // Dedupe: if this exact row is already in state (e.g. it was just
+      // reconciled from our own optimistic send), don't add it twice.
+      setMessages((prev) => (prev.some((existing) => existing.id === m.id) ? prev : [...prev, m]));
+    });
+    return unsub;
   }, [task.id]);
 
   useEffect(() => {
@@ -83,12 +113,38 @@ export default function TaskConversation({ task, staffToggleLabel, onBack, onPro
 
   async function handleSend() {
     if (!canSend) return;
+    const messageText = text;
+    setText("");
     setSending(true);
+
+    // Show the message(s) immediately, marked "pending", instead of
+    // waiting on the network round-trip + Realtime to display them.
+    const now = new Date().toISOString();
+    const tempEntries = [];
+    if (toStaff) {
+      tempEntries.push({ id: `temp-staff-${Date.now()}`, kind: "staff", author_name: user?.name, text: messageText, created_at: now, _status: "pending" });
+    }
+    if (toClient) {
+      tempEntries.push({ id: `temp-client-${Date.now()}`, kind: "client", author_name: user?.name, is_client: false, text: messageText, created_at: now, _status: "pending" });
+    }
+    setMessages((prev) => [...prev, ...tempEntries]);
+
     try {
-      await sendMessage({ taskId: task.id, text, toStaff, toClient });
-      setText("");
+      const result = await sendMessage({ taskId: task.id, text: messageText, toStaff, toClient });
+      const realRows = result?.messages || [];
+      // Swap the temp/pending entries for the real DB rows (correct ids),
+      // so the later Realtime event for the same rows gets deduped above
+      // instead of appearing as a duplicate bubble.
+      setMessages((prev) => {
+        const withoutTemp = prev.filter((m) => !tempEntries.some((t) => t.id === m.id));
+        const existingIds = new Set(withoutTemp.map((m) => m.id));
+        const newRows = realRows.filter((r) => !existingIds.has(r.id));
+        return [...withoutTemp, ...newRows];
+      });
     } catch (e) {
-      alert(e.message);
+      // Leave the pending bubbles in place, just mark them failed instead
+      // of silently disappearing or popping an alert.
+      setMessages((prev) => prev.map((m) => (tempEntries.some((t) => t.id === m.id) ? { ...m, _status: "failed" } : m)));
     } finally {
       setSending(false);
     }
@@ -129,7 +185,9 @@ export default function TaskConversation({ task, staffToggleLabel, onBack, onPro
             {task.due_date && <span className="text-[11px] text-slate-400">Due {task.due_date}</span>}
           </div>
           <h2 className="truncate text-[15px] font-bold text-slate-900">{task.title}</h2>
-          <p className="truncate text-[11.5px] text-slate-400">Client: {task.client_name}</p>
+          <p className="truncate text-[11.5px] text-slate-400">
+            Client: {task.client_name} · Assigned to: {task.assignee?.name || "Unassigned"}
+          </p>
         </div>
         <button
           onClick={handleComplete}
@@ -139,32 +197,23 @@ export default function TaskConversation({ task, staffToggleLabel, onBack, onPro
         </button>
       </div>
 
-      {/* Task details — Shopify order info for shopify_order tasks,
-          description/links/phone for manually created ones */}
-      {(task.source === "shopify_order" || task.description || task.links || task.client_phone) && (
+      {/* Task details — description/links/phone for manually created tasks */}
+      {(task.description || task.links || task.client_phone) && (
         <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[12px] text-slate-600 md:px-5">
-          {task.source === "shopify_order" ? (
-            <div className="flex flex-wrap gap-x-4 gap-y-1">
-              <span><span className="text-slate-400">Order:</span> {task.shopify_order_number}</span>
-              <span><span className="text-slate-400">Items:</span> {task.shopify_items}</span>
-              <span><span className="text-slate-400">Price:</span> {task.shopify_price}</span>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {task.client_phone && <p><span className="text-slate-400">Phone:</span> {task.client_phone}</p>}
-              {task.description && <p><span className="text-slate-400">Description:</span> {task.description}</p>}
-              {task.links && (
-                <p>
-                  <span className="text-slate-400">Links:</span>{" "}
-                  {task.links.split("\n").filter(Boolean).map((link, i) => (
-                    <a key={i} href={link.trim()} target="_blank" rel="noreferrer" className="mr-2 text-accent hover:underline">
-                      {link.trim()}
-                    </a>
-                  ))}
-                </p>
-              )}
-            </div>
-          )}
+          <div className="space-y-1">
+            {task.client_phone && <p><span className="text-slate-400">Phone:</span> {task.client_phone}</p>}
+            {task.description && <p><span className="text-slate-400">Description:</span> {task.description}</p>}
+            {task.links && (
+              <p>
+                <span className="text-slate-400">Links:</span>{" "}
+                {task.links.split("\n").filter(Boolean).map((link, i) => (
+                  <a key={i} href={link.trim()} target="_blank" rel="noreferrer" className="mr-2 text-accent hover:underline">
+                    {link.trim()}
+                  </a>
+                ))}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

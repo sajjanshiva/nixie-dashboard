@@ -18,7 +18,7 @@ export default function Modal({ open, onClose, children, wide = false }) {
         >
           <X size={18} />
         </button>
-        <div className="h-full">{children}</div>
+        <div className="h-full overflow-y-auto">{children}</div>
       </div>
     </div>
   );

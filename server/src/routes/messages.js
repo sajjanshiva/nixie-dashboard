@@ -29,7 +29,7 @@ router.post("/send", async (req, res) => {
     inserts.push({ task_id: taskId, kind: "client", author_id: req.user.id, author_name: req.user.name, is_client: false, text });
   }
 
-  const { error: insertError } = await supabaseAdmin.from("messages").insert(inserts);
+  const { data: inserted, error: insertError } = await supabaseAdmin.from("messages").insert(inserts).select();
   if (insertError) return res.status(500).json({ message: insertError.message });
 
   if (toClient) {
@@ -42,7 +42,7 @@ router.post("/send", async (req, res) => {
     }
   }
 
-  res.json({ ok: true });
+  res.json({ ok: true, messages: inserted });
 });
 
 export default router;

@@ -69,7 +69,8 @@ export default function AllTasks() {
                 )}
               </div>
               <p className="truncate text-[13.5px] font-semibold text-slate-800">{t.title}</p>
-              <p className="mb-2 truncate text-[12px] text-slate-400">{t.assignee?.name || t.client_name || "Unassigned"}</p>
+              <p className="truncate text-[12px] text-slate-400">Client: {t.client_name || "—"}</p>
+              <p className="mb-2 truncate text-[12px] text-slate-400">Assigned: {t.assignee?.name || "Unassigned"}</p>
               <div className="flex items-center justify-between text-[11px] text-slate-400">
                 <span>Progress</span>
                 <span>{t.progress}%</span>
