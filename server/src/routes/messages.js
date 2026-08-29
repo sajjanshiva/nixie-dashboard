@@ -23,10 +23,10 @@ router.post("/send", async (req, res) => {
 
   const inserts = [];
   if (toStaff) {
-    inserts.push({ task_id: taskId, kind: "staff", author_id: req.user.id, author_name: req.user.name, text });
+    inserts.push({ task_id: taskId, kind: "staff", author_id: req.user.id, author_name: req.user.name, author_role: req.user.role, text });
   }
   if (toClient) {
-    inserts.push({ task_id: taskId, kind: "client", author_id: req.user.id, author_name: req.user.name, is_client: false, text });
+    inserts.push({ task_id: taskId, kind: "client", author_id: req.user.id, author_name: req.user.name, author_role: req.user.role, is_client: false, text });
   }
 
   const { data: inserted, error: insertError } = await supabaseAdmin.from("messages").insert(inserts).select();

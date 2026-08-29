@@ -21,18 +21,31 @@ function Bubble({ msg }) {
     );
   }
   if (msg.kind === "staff") {
+    const isAdminAuthor = msg.author_role === "admin";
     return (
       <div className={`my-2 flex items-start gap-2.5 ${isPending ? "opacity-60" : ""}`}>
-        <Avatar name={msg.author_name} tone="staff" />
-        <div className={`max-w-[80%] rounded-xl rounded-tl-sm border px-3.5 py-2.5 ${isFailed ? "border-rose-300 bg-rose-50" : "border-amber-200 bg-amber-50"}`}>
+        <Avatar name={msg.author_name} tone={isAdminAuthor ? "admin" : "staff"} />
+        <div
+          className={`max-w-[80%] rounded-xl rounded-tl-sm border px-3.5 py-2.5 ${
+            isFailed
+              ? "border-rose-300 bg-rose-50"
+              : isAdminAuthor
+              ? "border-indigo-200 bg-indigo-50"
+              : "border-amber-200 bg-amber-50"
+          }`}
+        >
           <div className="mb-0.5 flex items-center gap-1.5">
-            <span className="text-[13px] font-semibold text-amber-900">{msg.author_name}</span>
-            <span className="rounded-full bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800">
+            <span className={`text-[13px] font-semibold ${isAdminAuthor ? "text-indigo-900" : "text-amber-900"}`}>{msg.author_name}</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase ${
+                isAdminAuthor ? "bg-indigo-200/70 text-indigo-800" : "bg-amber-200/70 text-amber-800"
+              }`}
+            >
               <Users size={9} className="mr-1 inline -mt-0.5" />
-              Staff
+              {isAdminAuthor ? "Admin" : "Staff"}
             </span>
           </div>
-          <p className="whitespace-pre-wrap text-[14px] leading-snug text-amber-950">{msg.text}</p>
+          <p className={`whitespace-pre-wrap text-[14px] leading-snug ${isAdminAuthor ? "text-indigo-950" : "text-amber-950"}`}>{msg.text}</p>
           <MsgStatus isPending={isPending} isFailed={isFailed} />
         </div>
       </div>
@@ -122,7 +135,7 @@ export default function TaskConversation({ task, staffToggleLabel, onBack, onPro
     const now = new Date().toISOString();
     const tempEntries = [];
     if (toStaff) {
-      tempEntries.push({ id: `temp-staff-${Date.now()}`, kind: "staff", author_name: user?.name, text: messageText, created_at: now, _status: "pending" });
+      tempEntries.push({ id: `temp-staff-${Date.now()}`, kind: "staff", author_name: user?.name, author_role: user?.role, text: messageText, created_at: now, _status: "pending" });
     }
     if (toClient) {
       tempEntries.push({ id: `temp-client-${Date.now()}`, kind: "client", author_name: user?.name, is_client: false, text: messageText, created_at: now, _status: "pending" });
