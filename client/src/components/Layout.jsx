@@ -28,7 +28,7 @@ export default function Layout({ navItems, title, children }) {
       <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-100 bg-white md:flex">
         <div className="flex items-center gap-2 px-5 py-4">
           <div className="h-4 w-4 rounded bg-accent" />
-          <span className="text-[14px] font-bold text-slate-900">Teamflow</span>
+          <span className="text-[14px] font-bold text-slate-900">Nixie Dashboard</span>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
           {navItems.map((item) => (
@@ -36,8 +36,7 @@ export default function Layout({ navItems, title, children }) {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `flex items-center justify-between rounded-lg px-3 py-2 text-[13px] font-medium transition ${
-                  isActive ? "bg-accent-soft text-accent-text" : "text-slate-500 hover:bg-slate-50"
+                `flex items-center justify-between rounded-lg px-3 py-2 text-[13px] font-medium transition ${isActive ? "bg-accent-soft text-accent-text" : "text-slate-500 hover:bg-slate-50"
                 }`
               }
             >
@@ -81,8 +80,7 @@ export default function Layout({ navItems, title, children }) {
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
-              `relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${
-                isActive ? "text-accent" : "text-slate-400"
+              `relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${isActive ? "text-accent" : "text-slate-400"
               }`
             }
           >
