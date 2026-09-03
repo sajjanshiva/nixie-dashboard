@@ -78,10 +78,12 @@ export async function markTaskComplete(taskId) {
 // Shopify inbox (orders + leads) — populated by the backend webhooks
 // ---------------------------------------------------------------------
 
+// Joins the linked task (if this order has already been assigned/converted)
+// so the Orders tab can show who it's assigned to without a second query.
 export async function getShopifyOrders() {
   const { data, error } = await supabase
     .from("shopify_orders")
-    .select("*")
+    .select("*, task:tasks(id, assignee:profiles(id, name))")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
@@ -90,6 +92,38 @@ export async function getShopifyOrders() {
 export async function updateOrderStatus(orderId, status) {
   const { error } = await supabase.from("shopify_orders").update({ status }).eq("id", orderId);
   if (error) throw error;
+}
+
+// Converts a Shopify order into a real task (same shape as manually created
+// tasks / lead follow-ups), assigns it to a staff member, and links the
+// order row to the new task so the Orders tab knows not to show the assign
+// form again. Phone is entered manually by admin since the webhook doesn't
+// always carry a reliable customer phone number.
+export async function assignOrder(order, { phone, assigneeId }) {
+  const { data: task, error: taskError } = await supabase
+    .from("tasks")
+    .insert({
+      title: order.order_number ? `Order ${order.order_number}` : "Shopify Order",
+      client_name: order.customer_name,
+      client_phone: phone,
+      assignee_id: assigneeId,
+      source: "shopify_order",
+      shopify_order_id: order.shopify_order_id,
+      shopify_order_number: order.order_number,
+      shopify_items: order.items,
+      shopify_price: order.price,
+    })
+    .select("*, assignee:profiles(id, name)")
+    .single();
+  if (taskError) throw taskError;
+
+  const { error: orderError } = await supabase
+    .from("shopify_orders")
+    .update({ task_id: task.id, status: "assigned" })
+    .eq("id", order.id);
+  if (orderError) throw orderError;
+
+  return task;
 }
 
 export async function getShopifyLeads({ assigneeId } = {}) {
@@ -134,15 +168,18 @@ export async function getMessages(taskId) {
 }
 
 export function subscribeToMessages(taskId, onInsert) {
+  const channelName = `messages-task-${taskId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const channel = supabase
-    .channel(`messages-task-${taskId}`)
+    .channel(channelName)
     .on(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "messages", filter: `task_id=eq.${taskId}` },
       (payload) => onInsert(payload.new)
     )
     .subscribe();
-  return () => supabase.removeChannel(channel);
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }
 
 // toStaff / toClient are the two composer toggles. Routed through the
@@ -231,6 +268,48 @@ export async function getAttendanceSummary({ staffId } = {}) {
   const { data, error } = await q;
   if (error) throw error;
   return data;
+}
+
+// Fetch the single attendance row for the current staff member for today.
+// Returns null if no record exists yet (not yet checked in today).
+export async function getTodayAttendance(staffId) {
+  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const { data, error } = await supabase
+    .from("attendance")
+    .select("*")
+    .eq("staff_id", staffId)
+    .eq("date", today)
+    .maybeSingle();
+  if (error) throw error;
+  return data; // { check_in, check_out, status, ... } or null
+}
+
+// Fetch attendance rows for a specific week — used by Home page week strip.
+export async function getWeekAttendance(staffId) {
+  const now = new Date();
+  // Monday of current week
+  const day = now.getDay(); // 0=Sun
+  const diffToMon = (day === 0 ? -6 : 1 - day);
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  const from = monday.toISOString().slice(0, 10);
+  const to   = sunday.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("attendance")
+    .select("date, status, check_in, check_out")
+    .eq("staff_id", staffId)
+    .gte("date", from)
+    .lte("date", to);
+  if (error) throw error;
+  // Return map: { "YYYY-MM-DD": { status, check_in, check_out } }
+  const map = {};
+  (data || []).forEach((r) => { map[r.date] = r; });
+  return { map, from, to, monday };
 }
 
 // ---------------------------------------------------------------------

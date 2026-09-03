@@ -10,6 +10,8 @@ import teamRoute from "./routes/team.js";
 import imagekitAuthRoute from "./routes/imagekitAuth.js";
 import shopifyWebhooks from "./routes/webhooksShopify.js";
 import whatsappWebhooks from "./routes/webhooksWhatsapp.js";
+import pushRoute from "./routes/push.js";
+import pushWebhooks from "./routes/webhooksPush.js";
 
 const app = express();
 
@@ -26,12 +28,17 @@ app.use(express.json());
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
+// Called by the Postgres trigger (via pg_net), not by a logged-in user —
+// verified with a shared secret inside the route itself, not requireAuth.
+app.use("/webhooks/push", pushWebhooks);
+
 // All routes below require a valid Supabase session.
 app.use("/api/messages", requireAuth, messagesRoute);
 app.use("/api/tasks", requireAuth, tasksRoute);
 app.use("/api/attendance", requireAuth, attendanceRoute);
 app.use("/api/team", requireAuth, teamRoute);
 app.use("/api/imagekit-auth", requireAuth, imagekitAuthRoute);
+app.use("/api/push", requireAuth, pushRoute);
 
 const port = process.env.PORT || 5000;
 app.listen(port, () => console.log(`Teamflow server running on http://localhost:${port}`));

@@ -7,12 +7,14 @@ const TONES = {
 };
 
 export default function Avatar({ name = "?", tone = "admin", className = "h-8 w-8 text-[11px]" }) {
-  const initials = name
-    .split(" ")
-    .map((p) => p[0])
+  const safeName = typeof name === "string" && name.trim() ? name.trim() : "?";
+  const initials = safeName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0] || "")
     .slice(0, 2)
     .join("")
-    .toUpperCase();
+    .toUpperCase() || "?";
   const t = TONES[tone] || TONES.admin;
   return (
     <div
