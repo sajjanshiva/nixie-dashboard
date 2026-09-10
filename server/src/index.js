@@ -12,6 +12,9 @@ import shopifyWebhooks from "./routes/webhooksShopify.js";
 import whatsappWebhooks from "./routes/webhooksWhatsapp.js";
 import pushRoute from "./routes/push.js";
 import pushWebhooks from "./routes/webhooksPush.js";
+import settingsRoute from "./routes/settings.js";
+import holidaysRoute from "./routes/holidays.js";
+import performanceRoute from "./routes/performance.js";
 
 const app = express();
 
@@ -39,6 +42,9 @@ app.use("/api/attendance", requireAuth, attendanceRoute);
 app.use("/api/team", requireAuth, teamRoute);
 app.use("/api/imagekit-auth", requireAuth, imagekitAuthRoute);
 app.use("/api/push", requireAuth, pushRoute);
+app.use("/api/settings", requireAuth, settingsRoute);
+app.use("/api/holidays", requireAuth, holidaysRoute);
+app.use("/api/performance", requireAuth, performanceRoute);
 
 const port = process.env.PORT || 5000;
 app.listen(port, () => console.log(`Teamflow server running on http://localhost:${port}`));

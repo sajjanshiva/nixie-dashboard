@@ -1,9 +1,10 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { LayoutGrid, ShoppingBag, ClipboardCheck, Users, BarChart3, Home as HomeIcon, ListChecks, Plane, Receipt, Target } from "lucide-react";
+import { LayoutGrid, ShoppingBag, ClipboardCheck, Users, BarChart3, Home as HomeIcon, ListChecks, Plane, Receipt, Target, Settings as SettingsIcon, CalendarDays } from "lucide-react";
 
 import { useAuth } from "./lib/AuthContext.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import RequireCheckedIn from "./components/RequireCheckedIn.jsx";
 import Layout from "./components/Layout.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 
@@ -13,6 +14,8 @@ import ShopifyInbox from "./pages/admin/ShopifyInbox.jsx";
 import Approvals from "./pages/admin/Approvals.jsx";
 import Team from "./pages/admin/Team.jsx";
 import AdminPerformance from "./pages/admin/Performance.jsx";
+import AdminSettings from "./pages/admin/Settings.jsx";
+import AdminHolidays from "./pages/admin/Holidays.jsx";
 
 import StaffHome from "./pages/staff/Home.jsx";
 import MyTasks from "./pages/staff/MyTasks.jsx";
@@ -27,6 +30,8 @@ const ADMIN_NAV = [
   { to: "/admin/approvals", label: "Approvals", icon: ClipboardCheck },
   { to: "/admin/team", label: "Team", icon: Users },
   { to: "/admin/performance", label: "Performance", icon: BarChart3 },
+  { to: "/admin/holidays", label: "Holidays", icon: CalendarDays },
+  { to: "/admin/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 const STAFF_NAV = [
@@ -62,13 +67,18 @@ export default function App() {
         <Route path="/admin/approvals" element={<ProtectedRoute role="admin"><AdminShell title="Approvals"><Approvals /></AdminShell></ProtectedRoute>} />
         <Route path="/admin/team" element={<ProtectedRoute role="admin"><AdminShell title="Team"><Team /></AdminShell></ProtectedRoute>} />
         <Route path="/admin/performance" element={<ProtectedRoute role="admin"><AdminShell title="Performance"><AdminPerformance /></AdminShell></ProtectedRoute>} />
+        <Route path="/admin/holidays" element={<ProtectedRoute role="admin"><AdminShell title="Holidays"><AdminHolidays /></AdminShell></ProtectedRoute>} />
+        <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminShell title="Settings"><AdminSettings /></AdminShell></ProtectedRoute>} />
 
+        {/* Home is always reachable once logged in — it's the only place staff can check in/out */}
         <Route path="/staff/home" element={<ProtectedRoute role="staff"><StaffShell title="Home"><StaffHome /></StaffShell></ProtectedRoute>} />
-        <Route path="/staff/my-tasks" element={<ProtectedRoute role="staff"><StaffShell title="My Tasks"><MyTasks /></StaffShell></ProtectedRoute>} />
-        <Route path="/staff/my-leads" element={<ProtectedRoute role="staff"><StaffShell title="My Leads"><MyLeads /></StaffShell></ProtectedRoute>} />
-        <Route path="/staff/leave" element={<ProtectedRoute role="staff"><StaffShell title="Leave"><Leave /></StaffShell></ProtectedRoute>} />
-        <Route path="/staff/reimbursements" element={<ProtectedRoute role="staff"><StaffShell title="Reimbursements"><Reimbursements /></StaffShell></ProtectedRoute>} />
-        <Route path="/staff/performance" element={<ProtectedRoute role="staff"><StaffShell title="My Performance"><MyPerformance /></StaffShell></ProtectedRoute>} />
+
+        {/* Everything else requires an open (checked-in) session today */}
+        <Route path="/staff/my-tasks" element={<ProtectedRoute role="staff"><StaffShell title="My Tasks"><RequireCheckedIn><MyTasks /></RequireCheckedIn></StaffShell></ProtectedRoute>} />
+        <Route path="/staff/my-leads" element={<ProtectedRoute role="staff"><StaffShell title="My Leads"><RequireCheckedIn><MyLeads /></RequireCheckedIn></StaffShell></ProtectedRoute>} />
+        <Route path="/staff/leave" element={<ProtectedRoute role="staff"><StaffShell title="Leave"><RequireCheckedIn><Leave /></RequireCheckedIn></StaffShell></ProtectedRoute>} />
+        <Route path="/staff/reimbursements" element={<ProtectedRoute role="staff"><StaffShell title="Reimbursements"><RequireCheckedIn><Reimbursements /></RequireCheckedIn></StaffShell></ProtectedRoute>} />
+        <Route path="/staff/performance" element={<ProtectedRoute role="staff"><StaffShell title="My Performance"><RequireCheckedIn><MyPerformance /></RequireCheckedIn></StaffShell></ProtectedRoute>} />
 
         <Route
           path="*"

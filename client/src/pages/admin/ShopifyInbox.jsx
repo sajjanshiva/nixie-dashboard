@@ -5,49 +5,67 @@ import Modal from "../../components/Modal.jsx";
 import LeadDetails from "../../components/LeadDetails.jsx";
 import toast from "react-hot-toast";
 
-// ── Assign control (leads) ────────────────────────────────────────────────
-function AssignControl({ currentAssigneeId, staff, onConfirm }) {
-  const [pending, setPending] = useState(null);
+// ── Assign control (leads) — mirrors OrderAssignControl/ReassignOrderControl
+//    below, minus the phone field (leads already have one on file) ─────────
+function AssignControl({ currentAssigneeId, currentAssigneeName, staff, onConfirm }) {
+  const [open, setOpen] = useState(false);
+  const [assigneeId, setAssigneeId] = useState("");
 
-  if (pending) {
-    return (
-      <div className="flex flex-1 items-center gap-1.5">
-        <span className="flex-1 truncate text-[11.5px] text-slate-600 dark:text-slate-300">
-          Assign to <span className="font-semibold">{pending.name}</span>?
+  if (!open) {
+    return currentAssigneeId ? (
+      <div className="flex flex-1 items-center justify-between gap-2">
+        <span className="truncate text-[11.5px] text-slate-500 dark:text-slate-400">
+          → Assigned to <span className="font-semibold">{currentAssigneeName || "staff"}</span>
         </span>
         <button
-          onClick={() => { onConfirm(pending.id); setPending(null); }}
-          className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"
-          aria-label="Confirm assign"
+          onClick={() => { setAssigneeId(currentAssigneeId || ""); setOpen(true); }}
+          className="shrink-0 text-[11.5px] font-medium text-accent hover:underline"
         >
-          <Check size={13} />
-        </button>
-        <button
-          onClick={() => setPending(null)}
-          className="flex h-6 w-6 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5"
-          aria-label="Cancel"
-        >
-          <XIcon size={13} />
+          Reassign
         </button>
       </div>
+    ) : (
+      <button
+        onClick={() => { setAssigneeId(""); setOpen(true); }}
+        className="btn-primary flex-1 py-1.5 text-[12px]"
+      >
+        Assign
+      </button>
     );
   }
 
   return (
-    <select
-      value={currentAssigneeId || ""}
-      onChange={(e) => {
-        const id = e.target.value;
-        if (!id) { onConfirm(null); return; }
-        setPending(staff.find((s) => s.id === id));
-      }}
-      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-    >
-      <option value="">Assign…</option>
-      {staff.map((s) => (
-        <option key={s.id} value={s.id}>{s.name}</option>
-      ))}
-    </select>
+    <div className="flex flex-1 items-center gap-1.5">
+      <select
+        autoFocus
+        value={assigneeId}
+        onChange={(e) => setAssigneeId(e.target.value)}
+        className="max-w-[130px] flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+      >
+        <option value="">Assign to…</option>
+        {staff.map((s) => (
+          <option key={s.id} value={s.id}>{s.name}</option>
+        ))}
+      </select>
+      <button
+        onClick={() => {
+          if (!assigneeId) { toast.error("Pick a staff member"); return; }
+          onConfirm(assigneeId);
+          setOpen(false);
+        }}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"
+        aria-label="Confirm assign"
+      >
+        <Check size={14} />
+      </button>
+      <button
+        onClick={() => setOpen(false)}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5"
+        aria-label="Cancel"
+      >
+        <XIcon size={14} />
+      </button>
+    </div>
   );
 }
 
@@ -251,13 +269,15 @@ export default function ShopifyInbox() {
 
   async function handleAssignLead(leadId, assigneeId) {
     await assignLead(leadId, assigneeId || null);
+    const newAssignee = assigneeId ? staff.find((s) => s.id === assigneeId) : null;
     setLeads((ls) =>
       ls.map((l) =>
         l.id === leadId
-          ? { ...l, assignee_id: assigneeId, status: assigneeId ? "assigned" : "unassigned" }
+          ? { ...l, assignee_id: assigneeId, assignee: newAssignee, status: assigneeId ? "assigned" : "unassigned" }
           : l
       )
     );
+    toast.success(`Lead ${assigneeId ? `assigned to ${newAssignee?.name || "staff"}` : "unassigned"}`);
   }
 
   const viewing = !viewingRef
@@ -326,7 +346,7 @@ export default function ShopifyInbox() {
                 </div>
                 <span
                   className={`badge capitalize ${
-                    l.status === "unassigned" ? "badge-slate" : "badge-accent"
+                    l.status === "unassigned" ? "badge-slate" : l.status === "contacted" ? "badge-success" : "badge-accent"
                   }`}
                 >
                   {l.status}
@@ -345,12 +365,13 @@ export default function ShopifyInbox() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setViewingRef({ type: "lead", id: l.id })}
-                  className="btn-secondary shrink-0 px-3 py-1.5 text-[12px]"
+                  className="btn-secondary flex-1 py-1.5 text-[12px]"
                 >
-                  Details
+                  View Details
                 </button>
                 <AssignControl
                   currentAssigneeId={l.assignee_id}
+                  currentAssigneeName={l.assignee?.name}
                   staff={staff}
                   onConfirm={(id) => handleAssignLead(l.id, id)}
                 />

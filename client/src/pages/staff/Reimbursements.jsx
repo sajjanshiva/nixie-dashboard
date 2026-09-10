@@ -75,15 +75,15 @@ export default function Reimbursements() {
           <p className="text-[13px] text-slate-400">No expenses yet.</p>
         ) : (
           items.map((r) => (
-            <div key={r.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3.5">
+            <div key={r.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-white p-3.5 dark:border-white/8 dark:bg-[#1A1D27]">
               <div className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-500"><Receipt size={14} /></span>
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-500 dark:bg-amber-500/15 dark:text-amber-400"><Receipt size={14} /></span>
                 <div>
-                  <p className="text-[13.5px] font-semibold text-slate-800">{r.category} · ₹{r.amount}</p>
-                  <p className="text-[12px] text-slate-500">{r.note}</p>
+                  <p className="text-[13.5px] font-semibold text-slate-800 dark:text-slate-100">{r.category} · ₹{r.amount}</p>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">{r.note}</p>
                   {r.receipt_url && <a href={r.receipt_url} target="_blank" rel="noreferrer" className="text-[11.5px] text-accent hover:underline">View receipt</a>}
                   {r.status === "rejected" && r.reject_reason && (
-                    <p className="mt-1 text-[11.5px] text-rose-500">Reason: {r.reject_reason}</p>
+                    <p className="mt-1 text-[11.5px] text-rose-500 dark:text-rose-400">Reason: {r.reject_reason}</p>
                   )}
                 </div>
               </div>
@@ -95,14 +95,14 @@ export default function Reimbursements() {
 
       <Modal open={open} onClose={() => setOpen(false)}>
         <div className="p-5">
-          <h3 className="mb-4 text-[15px] font-bold text-slate-900">New Expense</h3>
+          <h3 className="mb-4 text-[15px] font-bold text-slate-900 dark:text-white">New Expense</h3>
           <div className="space-y-3">
-            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent">
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input">
               <option>Travel</option><option>Food</option><option>Supplies</option><option>Other</option>
             </select>
-            <input type="number" placeholder="Amount (₹)" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-            <textarea rows={2} placeholder="What was this expense for?" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-[12.5px] text-slate-500">
+            <input type="number" placeholder="Amount (₹)" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input" />
+            <textarea rows={2} placeholder="What was this expense for?" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="input resize-none" />
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-[12.5px] text-slate-500 dark:border-slate-600 dark:text-slate-400">
               <Upload size={14} />
               {file ? file.name : "Upload receipt image"}
               <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />

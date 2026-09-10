@@ -5,6 +5,7 @@
 // those secrets never sit in the browser.
 
 import { supabase } from "./supabaseClient.js";
+import { istDateStr } from "./istDate.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
@@ -72,6 +73,15 @@ export async function updateTaskProgress(taskId, progress) {
 export async function markTaskComplete(taskId) {
   const { error } = await supabase.from("tasks").update({ status: "Complete", progress: 100 }).eq("id", taskId);
   if (error) throw error;
+}
+
+// Reverts a task from Complete back to In Progress without touching its
+// progress value — for undoing an accidental Mark Complete click. Routed
+// through the backend (not a direct Supabase update, unlike markTaskComplete)
+// so the task-reopened system message is logged from one place.
+export async function undoTaskComplete(taskId) {
+  const token = await authToken();
+  return apiPost("/api/tasks/undo-complete", { taskId }, token);
 }
 
 // ---------------------------------------------------------------------
@@ -249,17 +259,26 @@ export async function getImageKitAuthParams() {
 }
 
 // ---------------------------------------------------------------------
-// Attendance — check-in/out validated server-side (GPS + office geofence)
+// Attendance — check-in/out validated server-side (GPS + office geofence).
+// Staff can check in/out multiple times a day (sessions); a checkout at
+// or after office end time locks further check-ins until the next day.
 // ---------------------------------------------------------------------
 
-export async function checkIn({ lat, lng }) {
+export async function checkIn({ lat, lng, workMode }) {
   const token = await authToken();
-  return apiPost("/api/attendance/check-in", { lat, lng }, token);
+  return apiPost("/api/attendance/check-in", { lat, lng, workMode }, token);
 }
 
 export async function checkOut() {
   const token = await authToken();
   return apiPost("/api/attendance/check-out", {}, token);
+}
+
+// Closes any session left open from a previous day (forgotten checkout).
+// Call this once when the Home page loads, before reading today/week data.
+export async function syncAttendance() {
+  const token = await authToken();
+  return apiPost("/api/attendance/sync", {}, token);
 }
 
 export async function getAttendanceSummary({ staffId } = {}) {
@@ -270,24 +289,24 @@ export async function getAttendanceSummary({ staffId } = {}) {
   return data;
 }
 
-// Fetch the single attendance row for the current staff member for today.
-// Returns null if no record exists yet (not yet checked in today).
-export async function getTodayAttendance(staffId) {
-  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+// All of today's sessions for a staff member, oldest first. Empty array
+// if they haven't checked in at all today.
+export async function getTodaySessions(staffId) {
+  const today = istDateStr();
   const { data, error } = await supabase
     .from("attendance")
     .select("*")
     .eq("staff_id", staffId)
     .eq("date", today)
-    .maybeSingle();
+    .order("check_in", { ascending: true });
   if (error) throw error;
-  return data; // { check_in, check_out, status, ... } or null
+  return data || [];
 }
 
-// Fetch attendance rows for a specific week — used by Home page week strip.
+// Fetch this week's attendance, grouped by date (each date can have
+// multiple sessions now). Used by the Home page week strip.
 export async function getWeekAttendance(staffId) {
   const now = new Date();
-  // Monday of current week
   const day = now.getDay(); // 0=Sun
   const diffToMon = (day === 0 ? -6 : 1 - day);
   const monday = new Date(now);
@@ -296,20 +315,142 @@ export async function getWeekAttendance(staffId) {
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
 
-  const from = monday.toISOString().slice(0, 10);
-  const to   = sunday.toISOString().slice(0, 10);
+  const from = istDateStr(monday);
+  const to   = istDateStr(sunday);
 
   const { data, error } = await supabase
     .from("attendance")
-    .select("date, status, check_in, check_out")
+    .select("date, status, check_in, check_out, work_mode, auto_closed, overtime_minutes")
     .eq("staff_id", staffId)
     .gte("date", from)
-    .lte("date", to);
+    .lte("date", to)
+    .order("check_in", { ascending: true });
   if (error) throw error;
-  // Return map: { "YYYY-MM-DD": { status, check_in, check_out } }
+
+  // Group sessions by date: { "YYYY-MM-DD": { sessions: [...], status, overtimeMinutes } }
   const map = {};
-  (data || []).forEach((r) => { map[r.date] = r; });
+  (data || []).forEach((r) => {
+    if (!map[r.date]) map[r.date] = { sessions: [], status: null, overtimeMinutes: 0 };
+    map[r.date].sessions.push(r);
+    if (r.status) map[r.date].status = r.status;
+    map[r.date].overtimeMinutes += r.overtime_minutes || 0;
+  });
   return { map, from, to, monday };
+}
+
+// Admin: full session log for one staff member over a date range.
+export async function getAttendanceDetail(staffId, from, to) {
+  const token = await authToken();
+  const res = await fetch(
+    `${API_BASE}/api/attendance/detail?staffId=${staffId}&from=${from}&to=${to}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
+  if (!res.ok) throw new Error("Failed to load attendance detail");
+  return res.json();
+}
+
+// Admin: correct a session's checkout time (e.g. an auto-closed,
+// forgotten-checkout session — staff tells admin when they really left).
+export async function correctAttendanceSession(sessionId, checkOutIso) {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/attendance/${sessionId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ checkOut: checkOutIso }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed to update session"); }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// Performance — holiday/leave/overtime-aware stats, computed server-side
+// ---------------------------------------------------------------------
+
+export async function getPerformance(staffId, from, to) {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/performance/staff/${staffId}?from=${from}&to=${to}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load performance data");
+  return res.json();
+}
+
+// Admin only — all staff at once, for the summary table.
+export async function getPerformanceSummary(from, to) {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/performance/summary?from=${from}&to=${to}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load performance summary");
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// Settings — office start/end time + geofence (admin-editable)
+// ---------------------------------------------------------------------
+
+export async function getSettings() {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load settings");
+  return res.json(); // { officeStartTime, officeEndTime, officeLocation }
+}
+
+export async function updateSettings(payload) {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Failed to update settings"); }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// Holidays — national (auto-fetched) + custom, editable by admin
+// ---------------------------------------------------------------------
+
+export async function getHolidays(year) {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/holidays?year=${year}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load holidays");
+  return res.json();
+}
+
+export async function addOrEditHoliday(date, name) {
+  const token = await authToken();
+  return apiPost("/api/holidays", { date, name }, token);
+}
+
+export async function deleteHoliday(date) {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/holidays/${date}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to delete holiday");
+  return res.json();
+}
+
+export async function seedNationalHolidays(year, country = "IN") {
+  const token = await authToken();
+  const res = await fetch(`${API_BASE}/api/holidays/seed?year=${year}&country=${country}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to fetch national holidays");
+  return res.json();
 }
 
 // ---------------------------------------------------------------------
@@ -340,7 +481,7 @@ export async function getNotifications(userId) {
     .select("*")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(30);
+    .limit(5);
   if (error) throw error;
   return data;
 }

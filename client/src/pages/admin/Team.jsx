@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { UserPlus, ClipboardPlus, X } from "lucide-react";
+import { UserPlus, ClipboardPlus, X, Eye, EyeOff } from "lucide-react";
 import { getTeamMembers, addTeamMember, createTask } from "../../lib/api.js";
 import Avatar from "../../components/Avatar.jsx";
 import Modal from "../../components/Modal.jsx";
@@ -8,6 +8,7 @@ function AddMemberForm({ onDone }) {
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "staff" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showPw, setShowPw] = useState(false);
 
   async function submit() {
     setSaving(true);
@@ -24,12 +25,28 @@ function AddMemberForm({ onDone }) {
 
   return (
     <div className="p-5">
-      <h3 className="mb-4 text-[15px] font-bold text-slate-900">Add Team Member</h3>
+      <h3 className="mb-4 text-[15px] font-bold text-slate-900 dark:text-white">Add Team Member</h3>
       <div className="space-y-3">
-        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-        <input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-        <input placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-        <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent">
+        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
+        <input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" />
+        <div className="relative">
+          <input
+            placeholder="Password"
+            type={showPw ? "text" : "password"}
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            className="input pr-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPw((v) => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            aria-label={showPw ? "Hide password" : "Show password"}
+          >
+            {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+        <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input">
           <option value="staff">Employee</option>
           <option value="admin">Admin</option>
         </select>
@@ -58,17 +75,17 @@ function NewTaskForm({ members, onDone }) {
 
   return (
     <div className="p-5">
-      <h3 className="mb-4 text-[15px] font-bold text-slate-900">Create Task</h3>
+      <h3 className="mb-4 text-[15px] font-bold text-slate-900 dark:text-white">Create Task</h3>
       <div className="space-y-3">
-        <input placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-        <textarea placeholder="Description" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
+        <input placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="input" />
+        <textarea placeholder="Description" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input resize-none" />
         <div className="grid grid-cols-2 gap-2">
-          <input placeholder="Client name" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} className="rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-          <input placeholder="Client phone" value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} className="rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
+          <input placeholder="Client name" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} className="input" />
+          <input placeholder="Client phone" value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} className="input" />
         </div>
-        <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-        <textarea placeholder="Links (one per line)" rows={2} value={form.links} onChange={(e) => setForm({ ...form, links: e.target.value })} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent" />
-        <select value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13.5px] outline-none focus:border-accent">
+        <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} className="input" />
+        <textarea placeholder="Links (one per line)" rows={2} value={form.links} onChange={(e) => setForm({ ...form, links: e.target.value })} className="input resize-none" />
+        <select value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })} className="input">
           <option value="">Unassigned</option>
           {members.filter((m) => m.role === "staff").map((m) => (
             <option key={m.id} value={m.id}>{m.name}</option>

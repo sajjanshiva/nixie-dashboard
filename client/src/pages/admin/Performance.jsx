@@ -1,279 +1,187 @@
 import React, { useEffect, useState } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-} from "recharts";
-import { getTeamMembers, getAttendanceSummary, getTasks } from "../../lib/api.js";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { getPerformanceSummary } from "../../lib/api.js";
 import Avatar from "../../components/Avatar.jsx";
+import PerformanceDetail from "../../components/PerformanceDetail.jsx";
 
-const WEIGHTS = { punctuality: 0.4, taskOnTime: 0.6 };
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const PERIODS = ["Week", "Month", "Year"];
 
-function computeStats(attendanceRows, taskRows) {
-  const total      = attendanceRows.length || 1;
-  const onTime     = attendanceRows.filter((a) => a.status === "on_time").length;
-  const late       = attendanceRows.filter((a) => a.status === "late").length;
-  const present    = attendanceRows.filter((a) => a.status !== "absent").length;
-  const punctuality = Math.round((onTime / total) * 100);
-
-  const completed      = taskRows.filter((t) => t.status === "Complete");
-  const onTimeTasks    = completed.filter(
-    (t) => t.due_date && t.updated_at && t.updated_at.slice(0, 10) <= t.due_date
-  );
-  const overdue = taskRows.filter(
-    (t) => t.due_date && t.status !== "Complete" && t.due_date < new Date().toISOString().slice(0, 10)
-  );
-  const taskOnTimePct = completed.length
-    ? Math.round((onTimeTasks.length / completed.length) * 100)
-    : 0;
-
-  const score = Math.round(WEIGHTS.punctuality * punctuality + WEIGHTS.taskOnTime * taskOnTimePct);
-
-  return {
-    present, total, onTime, late, punctuality,
-    assigned: taskRows.length, completed: completed.length,
-    onTimeCompleted: onTimeTasks.length, overdue: overdue.length,
-    taskOnTimePct, score,
-  };
-}
-
-// Color based on score
 function scoreColor(score) {
-  if (score >= 80) return "#22c55e";
-  if (score >= 50) return "#f59e0b";
-  return "#FF6B5E";
+  if (score >= 80) return "text-emerald-600";
+  if (score >= 50) return "text-amber-500";
+  return "text-danger";
+}
+function fmtMinutes(min) {
+  if (!min) return "0m";
+  const h = Math.floor(min / 60), m = min % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function toDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-// Custom tooltip for recharts
-function CustomTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-xl border border-slate-100 bg-white px-3 py-2.5 shadow-lg dark:border-white/10 dark:bg-[#1e2130]">
-      <p className="mb-1 text-[12px] font-semibold text-slate-700 dark:text-slate-200">{label}</p>
-      {payload.map((p) => (
-        <p key={p.name} className="text-[12px]" style={{ color: p.color }}>
-          {p.name}: <span className="font-bold">{p.value}%</span>
-        </p>
-      ))}
-    </div>
-  );
+function getRange(periodType, anchor) {
+  const d = new Date(anchor);
+  if (periodType === "Week") {
+    const day = d.getDay();
+    const diffToMon = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d); monday.setDate(d.getDate() + diffToMon);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    return { from: toDateStr(monday), to: toDateStr(sunday), label: `${monday.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} – ${sunday.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` };
+  }
+  if (periodType === "Year") {
+    const y = d.getFullYear();
+    return { from: `${y}-01-01`, to: `${y}-12-31`, label: `${y}` };
+  }
+  const y = d.getFullYear(), m = d.getMonth();
+  return { from: toDateStr(new Date(y, m, 1)), to: toDateStr(new Date(y, m + 1, 0)), label: `${MONTH_NAMES[m]} ${y}` };
 }
-
-const PERIOD_OPTIONS = ["This Month", "Last Month", "This Year"];
+function navigateAnchor(periodType, anchor, delta) {
+  const d = new Date(anchor);
+  if (periodType === "Week") d.setDate(d.getDate() + delta * 7);
+  else if (periodType === "Year") d.setFullYear(d.getFullYear() + delta);
+  else d.setMonth(d.getMonth() + delta);
+  return d;
+}
 
 export default function Performance() {
-  const [rows, setRows]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState("This Month");
+  const [periodType, setPeriodType] = useState("Month");
+  const [anchor, setAnchor]         = useState(new Date());
+  const [rows, setRows]             = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [selected, setSelected]     = useState(null); // { id, name, role }
+
+  const range = getRange(periodType, anchor);
+  const todayStr = toDateStr(new Date());
+  const isCurrentRangeUpToToday = range.to >= todayStr;
 
   useEffect(() => {
-    (async () => {
-      const members = (await getTeamMembers()).filter((m) => m.role === "staff");
-      const results = await Promise.all(
-        members.map(async (m) => {
-          const [attendance, tasks] = await Promise.all([
-            getAttendanceSummary({ staffId: m.id }),
-            getTasks({ assigneeId: m.id }),
-          ]);
-          return { member: m, stats: computeStats(attendance, tasks) };
-        })
-      );
-      setRows(results);
-      setLoading(false);
-    })();
-  }, []);
+    setLoading(true);
+    getPerformanceSummary(range.from, range.to)
+      .then((data) => setRows(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.warn("Failed to load performance summary:", err);
+        setRows([]);
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line
+  }, [periodType, range.from, range.to]);
 
-  // Team averages
-  const teamPunctuality = rows.length
-    ? Math.round(rows.reduce((a, r) => a + r.stats.punctuality, 0) / rows.length)
-    : 0;
-  const teamTaskOnTime = rows.length
-    ? Math.round(rows.reduce((a, r) => a + r.stats.taskOnTimePct, 0) / rows.length)
-    : 0;
-  const totalDone    = rows.reduce((a, r) => a + r.stats.completed, 0);
-  const totalOverdue = rows.reduce((a, r) => a + r.stats.overdue, 0);
-
-  // Chart data
-  const chartData = rows.map((r) => ({
-    name: r.member.name.split(" ")[0],
-    Score: r.stats.score,
-    Punctuality: r.stats.punctuality,
-    "Task On-Time": r.stats.taskOnTimePct,
-    _score: r.stats.score,
-  }));
-
-  // Top performer
-  const top = rows.length
-    ? rows.reduce((best, r) => (r.stats.score > best.stats.score ? r : best), rows[0])
-    : null;
+  const validRows = rows.filter((r) => r && r.stats);
+  const teamPunctuality = validRows.length ? Math.round(validRows.reduce((a, r) => a + (r.stats.punctuality || 0), 0) / validRows.length) : 0;
+  const teamTaskOnTime  = validRows.length ? Math.round(validRows.reduce((a, r) => a + (r.stats.tasks?.onTimePct || 0), 0) / validRows.length) : 0;
+  const totalDone     = validRows.reduce((a, r) => a + (r.stats.tasks?.completed || 0), 0);
+  const totalOverdue  = validRows.reduce((a, r) => a + (r.stats.tasks?.overdue || 0), 0);
+  const totalOvertime = validRows.reduce((a, r) => a + (r.stats.overtimeTotalMinutes || 0), 0);
 
   const STAT_CARDS = [
-    { label: "Team Punctuality",  value: `${teamPunctuality}%`,  color: "text-emerald-600" },
-    { label: "Task On-Time",      value: `${teamTaskOnTime}%`,   color: "text-accent" },
-    { label: "Tasks Completed",   value: totalDone,              color: "text-slate-800 dark:text-slate-100" },
-    { label: "Overdue Tasks",     value: totalOverdue,           color: "text-danger" },
+    { label: "Team Punctuality", value: `${teamPunctuality}%`, color: "text-emerald-600" },
+    { label: "Task On-Time",     value: `${teamTaskOnTime}%`,  color: "text-accent" },
+    { label: "Tasks Completed",  value: totalDone,             color: "text-slate-800 dark:text-slate-100" },
+    { label: "Overdue Tasks",    value: totalOverdue,          color: "text-danger" },
+    { label: "Team Overtime",    value: fmtMinutes(totalOvertime), color: "text-amber-500" },
   ];
+
+  if (selected) {
+    return (
+      <div className="px-4 py-5 md:px-6 md:py-6">
+        <PerformanceDetail
+          staffId={selected.id}
+          staffName={selected.name}
+          staffRole="staff"
+          isAdmin
+          onClose={() => setSelected(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-5 md:px-6 md:py-6 space-y-6">
-      {/* Period toggle */}
-      <div className="flex items-center gap-2">
-        {PERIOD_OPTIONS.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
-              period === p
-                ? "bg-accent text-white"
-                : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
-            }`}
-          >
-            {p}
+      {/* Period controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-1.5">
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriodType(p)}
+              className={`rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition ${
+                periodType === p ? "bg-accent text-white" : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAnchor(navigateAnchor(periodType, anchor, -1))} className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
+            <ChevronLeft size={14} />
           </button>
-        ))}
+          <span className="min-w-[110px] text-center text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">{range.label}</span>
+          <button onClick={() => setAnchor(navigateAnchor(periodType, anchor, 1))} disabled={isCurrentRangeUpToToday} className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 dark:border-white/10 dark:hover:bg-white/5">
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {STAT_CARDS.map((c) => (
-          <div key={c.label} className="card p-4 dark:bg-[#1A1D27]">
-            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              {c.label}
-            </p>
-            <p className={`text-[26px] font-extrabold leading-tight ${c.color}`}>{c.value}</p>
+      {/* Team stat cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {STAT_CARDS.map((s) => (
+          <div key={s.label} className="card p-4 dark:bg-[#1A1D27]">
+            <p className="mb-1 text-[10.5px] uppercase tracking-wide text-slate-400">{s.label}</p>
+            <p className={`text-[20px] font-extrabold ${s.color}`}>{s.value}</p>
           </div>
         ))}
       </div>
-
-      {/* Top performer highlight */}
-      {top && (
-        <div className="flex items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-5 py-4 dark:border-accent/20 dark:bg-accent/10">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-[18px]">
-            🏆
-          </div>
-          <div>
-            <p className="text-[12px] font-semibold uppercase tracking-wide text-accent-text dark:text-accent">
-              Top Performer
-            </p>
-            <p className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
-              {top.member.name}{" "}
-              <span className="text-[13px] font-medium text-slate-400">
-                — Score: {top.stats.score}%
-              </span>
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Bar chart */}
-      {!loading && chartData.length > 0 && (
-        <div className="card p-5 dark:bg-[#1A1D27]">
-          <p className="mb-4 text-[13px] font-semibold text-slate-700 dark:text-slate-200">
-            Performance Score by Staff
-          </p>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} barSize={28} barGap={6}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                domain={[0, 100]}
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v) => `${v}%`}
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-              <Bar dataKey="Score" radius={[6, 6, 0, 0]}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={scoreColor(entry._score)} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          {/* Score color legend */}
-          <div className="mt-3 flex flex-wrap gap-4">
-            {[
-              { color: "#22c55e", label: "≥ 80% — Great" },
-              { color: "#f59e0b", label: "50–79% — Needs improvement" },
-              { color: "#FF6B5E", label: "< 50% — Attention needed" },
-            ].map((l) => (
-              <span key={l.label} className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: l.color }} />
-                {l.label}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Staff table */}
       <div className="card overflow-hidden dark:bg-[#1A1D27]">
         <div className="border-b border-slate-100 px-5 py-3.5 dark:border-white/6">
-          <p className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">
-            Staff Breakdown
-          </p>
+          <p className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">Staff Breakdown</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-[13px]">
+          <table className="w-full text-left text-[12.5px]">
             <thead>
-              <tr className="border-b border-slate-50 text-[11px] uppercase tracking-wide text-slate-400 dark:border-white/6">
-                <th className="px-5 py-3 font-semibold">Employee</th>
-                <th className="px-5 py-3 font-semibold">Punctuality</th>
-                <th className="px-5 py-3 font-semibold">Task On-Time</th>
-                <th className="px-5 py-3 font-semibold">Tasks Done</th>
-                <th className="px-5 py-3 font-semibold">Score</th>
+              <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400 dark:border-white/6">
+                <th className="px-5 py-2.5 font-semibold">Employee</th>
+                <th className="px-3 py-2.5 font-semibold">Punctuality</th>
+                <th className="px-3 py-2.5 font-semibold">Task On-Time</th>
+                <th className="px-3 py-2.5 font-semibold">Tasks Done</th>
+                <th className="px-3 py-2.5 font-semibold">Overtime</th>
+                <th className="px-3 py-2.5 font-semibold">Score</th>
               </tr>
             </thead>
             <tbody>
-              {loading
-                ? Array.from({ length: 3 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={5} className="px-5 py-3">
-                        <div className="h-4 animate-pulse rounded-full bg-slate-100 dark:bg-white/5" />
-                      </td>
-                    </tr>
-                  ))
-                : rows.map((r) => (
-                    <tr
-                      key={r.member.id}
-                      className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 dark:border-white/4 dark:hover:bg-white/3"
-                    >
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={r.member.name} className="h-7 w-7 text-[10px] shrink-0" />
-                          <span className="font-semibold text-slate-800 dark:text-slate-100">
-                            {r.member.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300">
-                        {r.stats.punctuality}%
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300">
-                        {r.stats.taskOnTimePct}%
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300">
-                        {r.stats.completed}/{r.stats.assigned}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-bold text-white"
-                          style={{ background: scoreColor(r.stats.score) }}
-                        >
-                          {r.stats.score}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-              {!loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-slate-400">
-                    No staff data yet.
-                  </td>
-                </tr>
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i}><td colSpan={6} className="px-5 py-4"><div className="h-4 animate-pulse rounded bg-slate-100 dark:bg-white/5" /></td></tr>
+                ))
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={6} className="px-5 py-6 text-center text-slate-400">No staff members yet.</td></tr>
+              ) : (
+                rows.map((r) => (
+                  <tr
+                    key={r.member.id}
+                    onClick={() => setSelected({ id: r.member.id, name: r.member.name })}
+                    className="cursor-pointer border-b border-slate-50 transition hover:bg-accent/5 dark:border-white/6 dark:hover:bg-accent/10"
+                  >
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar name={r.member.name} tone="staff" className="h-7 w-7 text-[10px]" />
+                        <span className="font-medium text-slate-700 dark:text-slate-200">{r.member.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{r.stats.punctuality}%</td>
+                    <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{r.stats.tasks.onTimePct}%</td>
+                    <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{r.stats.tasks.completed}/{r.stats.tasks.assigned}</td>
+                    <td className="px-3 py-3 text-amber-600">{fmtMinutes(r.stats.overtimeTotalMinutes)}</td>
+                    <td className={`px-3 py-3 font-bold ${scoreColor(r.stats.score)}`}>{r.stats.score}%</td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

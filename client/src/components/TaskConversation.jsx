@@ -6,7 +6,7 @@ import {
 import Avatar from "./Avatar.jsx";
 import {
   getMessages, subscribeToMessages, sendMessage,
-  updateTaskProgress, markTaskComplete,
+  updateTaskProgress, markTaskComplete, undoTaskComplete,
 } from "../lib/api.js";
 import { useAuth } from "../lib/AuthContext.jsx";
 
@@ -88,7 +88,7 @@ function Bubble({ msg }) {
 }
 
 // ── Task Info Bottom Sheet (mobile) ─────────────────────────────────────
-function InfoSheet({ task, progress, onProgressCommit, onComplete, onClose }) {
+function InfoSheet({ task, progress, onProgressCommit, onComplete, onUndoComplete, onClose }) {
   if (!task) return null;
   const isComplete = task.status === "Complete";
   const linkList = typeof task.links === "string" ? task.links.split("\n").filter(Boolean) : [];
@@ -106,9 +106,9 @@ function InfoSheet({ task, progress, onProgressCommit, onComplete, onClose }) {
         <p className="mb-4 text-[12px] text-slate-400">Client: {task.client_name || "—"} · Staff: {task.assignee?.name || "—"}</p>
 
         {(task.client_phone || task.description || linkList.length > 0) && (
-          <div className="mb-4 rounded-xl bg-slate-50 p-3 text-[12.5px] text-slate-600 dark:bg-white/5 dark:text-slate-400 space-y-1">
-            {task.client_phone && <p><span className="text-slate-400">Phone:</span> {task.client_phone}</p>}
-            {task.description && <p><span className="text-slate-400">Description:</span> {task.description}</p>}
+          <div className="mb-4 rounded-xl bg-slate-50 p-3 text-[12.5px] dark:bg-[#1A1D27] space-y-1">
+            {task.client_phone && <p><span className="text-slate-400 dark:text-slate-400">Phone:</span> <span className="text-slate-700 dark:text-white">{task.client_phone}</span></p>}
+            {task.description && <p><span className="text-slate-400 dark:text-slate-400">Description:</span> <span className="text-slate-700 dark:text-white">{task.description}</span></p>}
             {linkList.map((l, i) => (
               <a key={i} href={l.trim()} target="_blank" rel="noreferrer" className="block text-accent hover:underline">{l.trim()}</a>
             ))}
@@ -127,7 +127,11 @@ function InfoSheet({ task, progress, onProgressCommit, onComplete, onClose }) {
           />
         </div>
 
-        {!isComplete && (
+        {isComplete ? (
+          <button onClick={onUndoComplete} className="w-full rounded-xl bg-emerald-50 py-3 text-[13.5px] font-bold text-emerald-600 hover:bg-emerald-100 transition dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50">
+            Completed · Undo
+          </button>
+        ) : (
           <button onClick={onComplete} className="w-full rounded-xl bg-emerald-500 py-3 text-[13.5px] font-bold text-white hover:bg-emerald-600 transition">
             Mark Complete
           </button>
@@ -212,8 +216,14 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
   async function handleProgressCommit(value) {
     setProgress(value);
     try {
-      await updateTaskProgress(task.id, value);
-      onProgressChange?.(task.id, value);
+      const result = await updateTaskProgress(task.id, value);
+      // Backend reverts status to "In Progress" when progress drops below
+      // 100% on a task that was marked Complete — sync that back into local
+      // state so the badge/filter don't keep showing "Complete" once the
+      // progress bar no longer agrees.
+      const newStatus = result?.status || taskStatus;
+      if (newStatus !== taskStatus) setTaskStatus(newStatus);
+      onProgressChange?.(task.id, value, newStatus !== taskStatus ? newStatus : undefined);
     } catch (e) { alert(e.message); }
   }
 
@@ -223,6 +233,16 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
       setTaskStatus("Complete");
       setProgress(100);
       onProgressChange?.(task.id, 100, "Complete");
+    } catch (e) { alert(e.message); }
+  }
+
+  // Explicit "undo" for an accidental Mark Complete click — reverts status
+  // only, leaves whatever progress value is currently set untouched.
+  async function handleUndoComplete() {
+    try {
+      await undoTaskComplete(task.id);
+      setTaskStatus("In Progress");
+      onProgressChange?.(task.id, progress, "In Progress");
     } catch (e) { alert(e.message); }
   }
 
@@ -269,9 +289,10 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
             </button>
           )}
           {isComplete && (
-            <span className="hidden items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 sm:flex">
-              <CheckCircle2 size={12} /> Completed
-            </span>
+            <button onClick={handleUndoComplete} title="Undo — reopen this task"
+              className="hidden items-center gap-1 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-[11.5px] font-semibold text-emerald-600 transition hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50 sm:flex">
+              <CheckCircle2 size={12} /> Completed · Undo
+            </button>
           )}
         </div>
       </div>
@@ -304,11 +325,11 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
 
       {/* ── Desktop collapsible details + progress slider ────────── */}
       {detailsOpen && (
-        <div className="hidden shrink-0 border-b border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-white/6 dark:bg-white/3 md:block animate-fade-in">
+        <div className="hidden shrink-0 border-b border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-white/6 dark:bg-[#1A1D27] md:block animate-fade-in">
           {(task.client_phone || task.description || linkList.length > 0) && (
-            <div className="mb-3 space-y-1 text-[12px] text-slate-600 dark:text-slate-400">
-              {task.client_phone && <p><span className="text-slate-400">Phone:</span> {task.client_phone}</p>}
-              {task.description && <p><span className="text-slate-400">Description:</span> {task.description}</p>}
+            <div className="mb-3 space-y-1 text-[12px]">
+              {task.client_phone && <p><span className="text-slate-400 dark:text-slate-400">Phone:</span> <span className="text-slate-700 dark:text-white">{task.client_phone}</span></p>}
+              {task.description && <p><span className="text-slate-400 dark:text-slate-400">Description:</span> <span className="text-slate-700 dark:text-white">{task.description}</span></p>}
               {linkList.map((l, i) => (
                 <a key={i} href={l.trim()} target="_blank" rel="noreferrer" className="mr-2 text-accent hover:underline">{l.trim()}</a>
               ))}
@@ -316,7 +337,7 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
           )}
           <div>
             <div className="mb-1 flex items-center justify-between text-[11.5px]">
-              <span className="font-semibold text-slate-500 dark:text-slate-400">Progress</span>
+              <span className="font-semibold text-slate-500 dark:text-slate-300">Progress</span>
               <span className="font-bold text-accent">{progress}%</span>
             </div>
             <input type="range" min={0} max={100} value={progress}
@@ -325,7 +346,7 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
               onTouchEnd={(e) => handleProgressCommit(Number(e.target.value))}
               className="w-full" style={{ accentColor: "#22D3D3" }}
             />
-            <p className="mt-0.5 text-[10px] text-slate-400">Drag to update — client gets a WhatsApp message automatically.</p>
+            <p className="mt-0.5 text-[10px] text-slate-400 dark:text-slate-400">Drag to update — client gets a WhatsApp message automatically.</p>
           </div>
           {!isComplete && (
             <button onClick={handleComplete}
@@ -348,15 +369,20 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
         )}
       </div>
 
-      {/* ── Mobile: Mark Complete strip (below chat, only if not complete) */}
-      {!isComplete && (
-        <div className="shrink-0 border-t border-slate-100 px-3 py-2 dark:border-white/6 sm:hidden">
+      {/* ── Mobile: Mark Complete / Undo Complete strip (below chat) ── */}
+      <div className="shrink-0 border-t border-slate-100 px-3 py-2 dark:border-white/6 sm:hidden">
+        {isComplete ? (
+          <button onClick={handleUndoComplete}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 py-2.5 text-[13px] font-bold text-emerald-600 hover:bg-emerald-100 transition dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50">
+            <CheckCircle2 size={15} /> Completed · Undo
+          </button>
+        ) : (
           <button onClick={handleComplete}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-[13px] font-bold text-white hover:bg-emerald-600 transition">
             <CheckCircle2 size={15} /> Mark Complete
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── Composer ─────────────────────────────────────────────── */}
       <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 dark:border-white/6 dark:bg-[#13151F]">
@@ -401,6 +427,7 @@ export default function TaskConversation({ task, staffToggleLabel = "Staff", onB
           progress={progress}
           onProgressCommit={handleProgressCommit}
           onComplete={() => { handleComplete(); setInfoSheetOpen(false); }}
+          onUndoComplete={() => { handleUndoComplete(); setInfoSheetOpen(false); }}
           onClose={() => setInfoSheetOpen(false)}
         />
       )}

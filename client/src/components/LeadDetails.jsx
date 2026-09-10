@@ -27,9 +27,9 @@ export default function LeadDetails({ lead }) {
   ];
 
   const Row = ([label, value]) => (
-    <div key={label} className="flex justify-between gap-3 border-b border-slate-50 py-1.5">
-      <dt className="text-slate-400">{label}</dt>
-      <dd className="text-right text-slate-700">{value || "—"}</dd>
+    <div key={label} className="flex justify-between gap-3 border-b border-slate-50 py-1.5 dark:border-white/6">
+      <dt className="text-slate-400 dark:text-slate-500">{label}</dt>
+      <dd className="text-right text-slate-700 dark:text-slate-200">{value || "—"}</dd>
     </div>
   );
 
@@ -37,8 +37,8 @@ export default function LeadDetails({ lead }) {
     <dl className="space-y-2 text-[13px]">
       {primaryRows.map(Row)}
       {lead.image_url && (
-        <div className="flex justify-between gap-3 border-b border-slate-50 py-1.5">
-          <dt className="text-slate-400">Image</dt>
+        <div className="flex justify-between gap-3 border-b border-slate-50 py-1.5 dark:border-white/6">
+          <dt className="text-slate-400 dark:text-slate-500">Image</dt>
           <dd className="text-right">
             <a href={lead.image_url} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
               View outfit image
@@ -47,7 +47,7 @@ export default function LeadDetails({ lead }) {
         </div>
       )}
       {outfitRows.map(Row)}
-      <p className="pt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">Address</p>
+      <p className="pt-2 text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Address</p>
       {addressRows.map(Row)}
     </dl>
   );

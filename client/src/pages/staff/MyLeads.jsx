@@ -7,8 +7,8 @@ import LeadDetails from "../../components/LeadDetails.jsx";
 
 function StatusBadge({ status }) {
   const map = {
-    assigned: "bg-slate-100 text-slate-500",
-    contacted: "bg-emerald-50 text-emerald-700",
+    assigned: "bg-slate-100 text-slate-500 dark:bg-white/8 dark:text-slate-400",
+    contacted: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
   };
   return (
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${map[status] || map.assigned}`}>
@@ -49,18 +49,18 @@ export default function MyLeads() {
           <p className="text-[13px] text-slate-400">No leads assigned to you yet.</p>
         ) : (
           leads.map((l) => (
-            <div key={l.id} className="rounded-xl border border-slate-100 bg-white p-3.5">
+            <div key={l.id} className="rounded-xl border border-slate-100 bg-white p-3.5 dark:border-white/8 dark:bg-[#1A1D27]">
               <div className="mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
                   <Target size={12} />
                   {l.lead_number || "Lead"}
                 </span>
                 <StatusBadge status={l.status} />
               </div>
-              <p className="truncate text-[13.5px] font-semibold text-slate-800">{l.name || "—"}</p>
+              <p className="truncate text-[13.5px] font-semibold text-slate-800 dark:text-slate-100">{l.name || "—"}</p>
               <p className="mb-2.5 truncate text-[12px] text-slate-400">{l.outfit_type} · ₹{l.price_estimate}</p>
               <div className="flex gap-2">
-                <button onClick={() => setViewingId(l.id)} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50">
+                <button onClick={() => setViewingId(l.id)} className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5">
                   View Details
                 </button>
                 {l.status !== "contacted" && (
@@ -81,7 +81,7 @@ export default function MyLeads() {
       <Modal open={!!viewing} onClose={() => setViewingId(null)}>
         {viewing && (
           <div className="p-5">
-            <h3 className="mb-4 text-[15px] font-bold text-slate-900">Lead Details</h3>
+            <h3 className="mb-4 text-[15px] font-bold text-slate-900 dark:text-white">Lead Details</h3>
             <LeadDetails lead={viewing} />
             {viewing.status !== "contacted" && (
               <button

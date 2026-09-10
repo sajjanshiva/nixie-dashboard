@@ -3,7 +3,7 @@ import {
   CheckCircle2, CircleDot, Clock, MessageSquare, ChevronRight,
   CheckCircle,
 } from "lucide-react";
-import { getTasks, updateTaskProgress, markTaskComplete } from "../../lib/api.js";
+import { getTasks, updateTaskProgress, markTaskComplete, undoTaskComplete } from "../../lib/api.js";
 import { useAuth } from "../../lib/AuthContext.jsx";
 import TaskConversation from "../../components/TaskConversation.jsx";
 
@@ -46,11 +46,26 @@ function MobileTaskInfo({ task, onOpenChat, onBack, onProgressChange }) {
     } catch (e) { alert(e.message); }
   }
 
+  // Explicit undo for an accidental Mark Complete click.
+  async function handleUndoComplete() {
+    try {
+      await undoTaskComplete(task.id);
+      setStatus("In Progress");
+      onProgressChange?.(task.id, progress, "In Progress");
+    } catch (e) { alert(e.message); }
+  }
+
   async function handleProgress(value) {
     setProgress(value);
     try {
-      await updateTaskProgress(task.id, value);
-      onProgressChange?.(task.id, value);
+      const result = await updateTaskProgress(task.id, value);
+      // Same fix as TaskConversation.jsx: the backend reverts status to
+      // "In Progress" when progress drops below 100% on a Complete task —
+      // sync that back so this screen doesn't keep showing "Task Completed"
+      // once the progress bar no longer agrees.
+      const newStatus = result?.status || status;
+      if (newStatus !== status) setStatus(newStatus);
+      onProgressChange?.(task.id, value, newStatus !== status ? newStatus : undefined);
     } catch (e) { alert(e.message); }
   }
 
@@ -128,9 +143,10 @@ function MobileTaskInfo({ task, onOpenChat, onBack, onProgressChange }) {
             <CheckCircle2 size={17} /> Mark Complete
           </button>
         ) : (
-          <div className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 py-3 text-[13px] font-semibold text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400">
-            <CheckCircle size={16} /> Task Completed
-          </div>
+          <button onClick={handleUndoComplete}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-50 py-3 text-[13px] font-semibold text-emerald-600 transition hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50">
+            <CheckCircle size={16} /> Task Completed · Undo
+          </button>
         )}
       </div>
 

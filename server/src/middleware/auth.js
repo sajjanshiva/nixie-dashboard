@@ -19,7 +19,17 @@ export async function requireAuth(req, res, next) {
     .single();
   if (profileError || !profile) return res.status(401).json({ message: "No profile found for this user" });
 
-  req.user = profile; // { id, name, email, role }
+  // First-ever authenticated request for this person — stamp it. Used by
+  // Performance to know when tracking should actually start for them,
+  // instead of when their account row happened to be created (which
+  // could be days/weeks before they actually started using the app).
+  if (!profile.activated_at) {
+    const now = new Date().toISOString();
+    await supabaseAdmin.from("profiles").update({ activated_at: now }).eq("id", profile.id);
+    profile.activated_at = now;
+  }
+
+  req.user = profile; // { id, name, email, role, activated_at }
   next();
 }
 
